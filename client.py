@@ -13,36 +13,39 @@ def send_command(command):
             client_socket.sendall(command.encode('utf-8'))
 
             if command.upper().startswith("UPLOAD "):
-                filename = command.split(" ", 1)[1]
-                if not os.path.exists(filename):
+                filename = command.split(" ", 1)[1].strip()
+                if not os.path.isfile(filename):
                     print(f"Error: File '{filename}' does not exist.")
                     return
-
-                file_size = os.path.getsize(filename)
-                with open(filename, "rb") as f:
-                    sent_bytes = 0
-                    while chunk := f.read(BUFFER_SIZE):
-                        client_socket.sendall(chunk)
-                        sent_bytes += len(chunk)
-                        print(f"Upload progress: {sent_bytes * 100 / file_size:.2f}%", end="\r")
+                
+                # Đợi xác nhận từ server
+                response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
+                if response == "READY":
+                    with open(filename, "rb") as f:
+                        while chunk := f.read(BUFFER_SIZE):
+                            client_socket.sendall(chunk)
                     client_socket.sendall(b'EOF')
-                print("\nUpload completed.")
+                    print(client_socket.recv(BUFFER_SIZE).decode('utf-8'))
+                else:
+                    print(f"Error from server: {response}")
 
             elif command.upper().startswith("DOWNLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                 if response == "EXISTS":
-                    filename = command.split(" ", 1)[1]
+                    filename = command.split(" ", 1)[1].strip()
                     with open(f"downloaded_{filename}", "wb") as f:
                         total_bytes = 0
                         while True:
                             data = client_socket.recv(BUFFER_SIZE)
-                            if data == b'EOF':
+                            if data.endswith(b'EOF'):  # Phát hiện EOF ở cuối
+                                f.write(data[:-3])  # Bỏ EOF ra khỏi dữ liệu ghi vào tệp
                                 break
                             f.write(data)
                             total_bytes += len(data)
-                            print(f"Download progress: {total_bytes} bytes", end="\r")
+                            print(f"Downloading: {total_bytes} bytes received", end="\r")
                     print("\nDownload completed.")
                 else:
+                    response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                     print(f"Error: {response}")
             else:
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
@@ -50,6 +53,8 @@ def send_command(command):
 
         except socket.error as e:
             print(f"Connection error: {e}")
+        except Exception as e:
+            print(f"Unexpected error: {e}")
 
 def main():
     while True:
@@ -59,7 +64,8 @@ def main():
                 print("Closing connection.")
                 break
             elif command.upper().startswith("UPLOAD ") or command.upper().startswith("DOWNLOAD "):
-                if len(command.split(" ", 1)) < 2:
+                parts = command.split(" ", 1)
+                if len(parts) < 2 or not parts[1].strip():
                     print("Error: File name required.")
                     continue
                 send_command(command)

@@ -11,23 +11,36 @@ def handle_client(client_socket, address):
     clients.append(client_socket)
     try:
         while True:
-            data = client_socket.recv(BUFFER_SIZE)
-            if not data:
+            command = client_socket.recv(BUFFER_SIZE).decode('utf-8').strip()
+            if not command:
                 break
-            command = data.decode('utf-8')
+
             if command.upper().startswith("UPLOAD "):
-                filename = command.split(" ", 1)[1]
-                unique_filename = get_unique_filename(filename)
-                with open(os.path.join(UPLOAD_DIR, unique_filename), "wb") as f:
-                    while True:
-                        data = client_socket.recv(BUFFER_SIZE)
-                        if data == b'EOF':
-                            break
-                        f.write(data)
-                client_socket.sendall(b"Upload completed")
+                try:
+                    original_filename = command.split(" ", 1)[1].strip()
+                    if not original_filename:
+                        client_socket.sendall(b"ERROR: No filename provided")
+                        continue
+
+                    sanitized_filename = sanitize_filename(original_filename)
+                    unique_filename = get_unique_filename(f"uploaded_{sanitized_filename}")
+                    
+                    # Phản hồi "READY" trước khi nhận file
+                    client_socket.sendall(b"READY")
+                    
+                    with open(os.path.join(UPLOAD_DIR, unique_filename), "wb") as f:
+                        while True:
+                            data = client_socket.recv(BUFFER_SIZE)
+                            if data == b'EOF':
+                                break
+                            f.write(data)
+                    print(f"File uploaded and saved as: {unique_filename}")
+                    client_socket.sendall(f"Upload completed as {unique_filename}".encode('utf-8'))
+                except Exception as e:
+                    client_socket.sendall(f"ERROR: {str(e)}".encode())
 
             elif command.upper().startswith("DOWNLOAD "):
-                filename = command.split(" ", 1)[1]
+                filename = command.split(" ", 1)[1].strip()
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 if os.path.exists(filepath):
                     client_socket.sendall(b"EXISTS")
@@ -47,6 +60,10 @@ def handle_client(client_socket, address):
         clients.remove(client_socket)
         client_socket.close()
 
+def sanitize_filename(filename):
+    filename = os.path.basename(filename.replace("\\", "/").strip())
+    return filename.replace(" ", "_")
+
 def get_unique_filename(filename):
     base, ext = os.path.splitext(filename)
     counter = 1
@@ -60,15 +77,14 @@ def start_server(host='0.0.0.0', port=12345):
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
 
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen(5)
-    print(f"Server is listening on {host}:{port}")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.bind((host, port))
+        server.listen(5)
+        print(f"Server is listening on {host}:{port}")
 
-    while True:
-        client_socket, addr = server.accept()
-        client_thread = threading.Thread(target=handle_client, args=(client_socket, addr))
-        client_thread.start()
+        while True:
+            client_socket, addr = server.accept()
+            threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True).start()
 
 if __name__ == "__main__":
     start_server()
