@@ -40,13 +40,24 @@ def handle_client(client_socket, address):
                     client_socket.sendall(f"ERROR: {str(e)}".encode())
 
             elif command.upper().startswith("DOWNLOAD "):
-                filename = command.split(" ", 1)[1].strip()
+                try:
+                    filename = command.split(" ", 1)[1].strip()
+                except IndexError:
+                    client_socket.sendall(b"ERROR: Invalid DOWNLOAD command")
+                    continue
+
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 if os.path.exists(filepath):
-                    client_socket.sendall(b"EXISTS")
+                    file_size = os.path.getsize(filepath)
+                    client_socket.sendall(f"EXISTS {file_size}".encode('utf-8'))
+                    print(f"Sending file: {filename} (size: {file_size} bytes)")
+
                     with open(filepath, "rb") as f:
                         while chunk := f.read(BUFFER_SIZE):
                             client_socket.sendall(chunk)
+                            print(f"Sent chunk of size: {len(chunk)} bytes")
+
+                    print("EOF signal sent")
                     client_socket.sendall(b'EOF')
                 else:
                     client_socket.sendall(b"ERROR: File not found")

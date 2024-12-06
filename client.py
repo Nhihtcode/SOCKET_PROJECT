@@ -21,29 +21,42 @@ def send_command(command):
                 # Đợi xác nhận từ server
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                 if response == "READY":
+                    file_size = os.path.getsize(filename)
+                    sent_bytes = 0
+
                     with open(filename, "rb") as f:
                         while chunk := f.read(BUFFER_SIZE):
                             client_socket.sendall(chunk)
+                            sent_bytes += len(chunk)
+                            progress = (sent_bytes / file_size) * 100
+                            print(f"Uploading: {progress:.2f}%", end="\r", flush=True)
+
                     client_socket.sendall(b'EOF')
+                    print("\nUpload completed.")
                     print(client_socket.recv(BUFFER_SIZE).decode('utf-8'))
                 else:
                     print(f"Error from server: {response}")
 
             elif command.upper().startswith("DOWNLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
-                if response == "EXISTS":
+                if response.startswith("EXISTS"):
+                    total_size = int(response.split(" ", 1)[1])  # Lấy kích thước tệp từ server
+                    downloaded_bytes = 0
+
                     filename = command.split(" ", 1)[1].strip()
                     with open(f"downloaded_{filename}", "wb") as f:
-                        total_bytes = 0
                         while True:
                             data = client_socket.recv(BUFFER_SIZE)
-                            if data.endswith(b'EOF'):  # Phát hiện EOF ở cuối
-                                f.write(data[:-3])  # Bỏ EOF ra khỏi dữ liệu ghi vào tệp
+                            if data == b'EOF':
                                 break
                             f.write(data)
-                            total_bytes += len(data)
-                            print(f"Downloading: {total_bytes} bytes received", end="\r")
-                    print("\nDownload completed.")
+                            downloaded_bytes += len(data)
+
+                            # Tính toán phần trăm và hiển thị tiến độ
+                            progress = (downloaded_bytes / total_size) * 100
+                            print(f"Downloading: {progress:.2f}% (Received: {downloaded_bytes} / {total_size} bytes)", end="\r")
+                
+                    print("Download completed.")
                 else:
                     response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                     print(f"Error: {response}")
