@@ -42,25 +42,22 @@ def handle_client(client_socket, address):
             elif command.upper().startswith("DOWNLOAD "):
                 try:
                     filename = command.split(" ", 1)[1].strip()
-                except IndexError:
-                    client_socket.sendall(b"ERROR: Invalid DOWNLOAD command")
-                    continue
+                    filepath = os.path.join(UPLOAD_DIR, filename)
+                    if os.path.exists(filepath):
+                        file_size = os.path.getsize(filepath)
+                        client_socket.sendall(b"EXISTS")
+                        client_socket.sendall(f"{file_size}".encode('utf-8'))  # Gửi kích thước file trước
 
-                filepath = os.path.join(UPLOAD_DIR, filename)
-                if os.path.exists(filepath):
-                    file_size = os.path.getsize(filepath)
-                    client_socket.sendall(f"EXISTS {file_size}".encode('utf-8'))
-                    print(f"Sending file: {filename} (size: {file_size} bytes)")
-
-                    with open(filepath, "rb") as f:
-                        while chunk := f.read(BUFFER_SIZE):
-                            client_socket.sendall(chunk)
-                            print(f"Sent chunk of size: {len(chunk)} bytes")
-
-                    print("EOF signal sent")
-                    client_socket.sendall(b'EOF')
-                else:
-                    client_socket.sendall(b"ERROR: File not found")
+                        with open(filepath, "rb") as f:
+                            while chunk := f.read(BUFFER_SIZE):
+                                client_socket.sendall(chunk)  # Gửi từng phần dữ liệu
+                                print(f"Sending chunk: {len(chunk)} bytes")
+                        client_socket.sendall(b'EOF')  # Gửi tín hiệu EOF khi hoàn thành
+                    else:
+                        client_socket.sendall(b"ERROR: File not found")
+                except Exception as e:
+                    print(f"Error during download: {e}")
+                    client_socket.sendall(f"ERROR: {str(e)}".encode('utf-8'))
 
             else:
                 client_socket.sendall(b"ERROR: Invalid command")
