@@ -2,7 +2,7 @@ import socket
 import os
 import sys
 
-SERVER_HOST = "127.0.0.1"
+SERVER_HOST = "192.168.138.1"
 SERVER_PORT = 12345
 BUFFER_SIZE = 1024
 
