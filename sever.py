@@ -51,7 +51,6 @@ def handle_client(client_socket, address):
                         with open(filepath, "rb") as f:
                             while chunk := f.read(BUFFER_SIZE):
                                 client_socket.sendall(chunk)  # Gửi từng phần dữ liệu
-                                print(f"Sending chunk: {len(chunk)} bytes")
                         client_socket.sendall(b'EOF')  # Gửi tín hiệu EOF khi hoàn thành
                     else:
                         client_socket.sendall(b"ERROR: File not found")
