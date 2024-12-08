@@ -12,11 +12,9 @@ def send_command(command):
             client_socket.settimeout(10)  # Thêm timeout cho client
             client_socket.connect((SERVER_HOST, SERVER_PORT))
             client_socket.sendall(command.encode('utf-8'))
-            print("Command sent. Waiting for response...")
 
             if command.upper().startswith("UPLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
-                print(f"Server response: {response}")
                 
                 if response == "READY":
                     filename = command.split(" ", 1)[1].strip()
@@ -43,7 +41,7 @@ def send_command(command):
             elif command.upper().startswith("DOWNLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                 if response == "EXISTS":
-                    file_size = int(client_socket.recv(BUFFER_SIZE).decode('utf-8'))  # Nhận kích thước file từ server
+                    file_size = int(client_socket.recv(BUFFER_SIZE).decode('utf-8'))  # Nhận kích thước file
                     received_size = 0
                     filename = command.split(" ", 1)[1].strip()
 

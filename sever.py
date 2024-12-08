@@ -14,7 +14,6 @@ def handle_client(client_socket, address):
         while True:
             client_socket.settimeout(10)  # Timeout cho kết nối
             command = client_socket.recv(BUFFER_SIZE).decode('utf-8').strip()
-            print(f"Received command: {command}")
             if not command:
                 break
 
@@ -46,12 +45,13 @@ def handle_client(client_socket, address):
                     if os.path.exists(filepath):
                         file_size = os.path.getsize(filepath)
                         client_socket.sendall(b"EXISTS")
-                        client_socket.sendall(f"{file_size}".encode('utf-8'))  # Gửi kích thước file trước
+                        client_socket.sendall(f"{file_size}".encode('utf-8'))  # Gửi kích thước file
 
                         with open(filepath, "rb") as f:
                             while chunk := f.read(BUFFER_SIZE):
-                                client_socket.sendall(chunk)  # Gửi từng phần dữ liệu
-                        client_socket.sendall(b'EOF')  # Gửi tín hiệu EOF khi hoàn thành
+                                client_socket.sendall(chunk)  # Gửi dữ liệu từng phần
+                        client_socket.sendall(b'EOF')  # Gửi tín hiệu EOF chỉ một lần
+                        print(f"File {filename} sent successfully.")
                     else:
                         client_socket.sendall(b"ERROR: File not found")
                 except Exception as e:
