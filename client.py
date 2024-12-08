@@ -9,18 +9,21 @@ BUFFER_SIZE = 1024
 def send_command(command):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         try:
+            client_socket.settimeout(10)  # Thêm timeout cho client
             client_socket.connect((SERVER_HOST, SERVER_PORT))
             client_socket.sendall(command.encode('utf-8'))
+            print("Command sent. Waiting for response...")
 
             if command.upper().startswith("UPLOAD "):
-                filename = command.split(" ", 1)[1].strip()
-                if not os.path.isfile(filename):
-                    print(f"Error: File '{filename}' does not exist.")
-                    return
-                
-                # Đợi xác nhận từ server
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
+                print(f"Server response: {response}")
+                
                 if response == "READY":
+                    filename = command.split(" ", 1)[1].strip()
+                    if not os.path.isfile(filename):
+                        print(f"Error: File '{filename}' does not exist.")
+                        return
+                    
                     file_size = os.path.getsize(filename)
                     sent_bytes = 0
 
@@ -35,7 +38,7 @@ def send_command(command):
                     print("\nUpload completed.")
                     print(client_socket.recv(BUFFER_SIZE).decode('utf-8'))
                 else:
-                    print(f"Error from server: {response}")
+                    print(f"Unexpected server response: {response}")
 
             elif command.upper().startswith("DOWNLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
@@ -64,9 +67,10 @@ def send_command(command):
             else:
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                 print("Server:", response)
-
+        except socket.timeout:
+            print("Timeout: No response from server.")
         except socket.error as e:
-            print(f"Connection error: {e}")
+            print(f"Socket error: {e}")
         except Exception as e:
             print(f"Unexpected error: {e}")
 

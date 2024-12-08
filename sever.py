@@ -1,6 +1,7 @@
 import socket
 import threading
 import os
+import signal
 
 BUFFER_SIZE = 1024
 UPLOAD_DIR = "uploads"
@@ -11,33 +12,32 @@ def handle_client(client_socket, address):
     clients.append(client_socket)
     try:
         while True:
+            client_socket.settimeout(10)  # Timeout cho kết nối
             command = client_socket.recv(BUFFER_SIZE).decode('utf-8').strip()
+            print(f"Received command: {command}")
             if not command:
                 break
 
             if command.upper().startswith("UPLOAD "):
-                try:
-                    original_filename = command.split(" ", 1)[1].strip()
-                    if not original_filename:
-                        client_socket.sendall(b"ERROR: No filename provided")
-                        continue
+                filename = command.split(" ", 1)[1].strip()
+                if not filename:
+                    client_socket.sendall(b"ERROR: No filename provided")
+                    return
+                
+                sanitized_filename = sanitize_filename(filename)
+                unique_filename = get_unique_filename(f"uploaded_{sanitized_filename}")
+                client_socket.sendall(b"READY")  # Phản hồi READY
 
-                    sanitized_filename = sanitize_filename(original_filename)
-                    unique_filename = get_unique_filename(f"uploaded_{sanitized_filename}")
-                    
-                    # Phản hồi "READY" trước khi nhận file
-                    client_socket.sendall(b"READY")
-                    
-                    with open(os.path.join(UPLOAD_DIR, unique_filename), "wb") as f:
-                        while True:
-                            data = client_socket.recv(BUFFER_SIZE)
-                            if data == b'EOF':
-                                break
-                            f.write(data)
-                    print(f"File uploaded and saved as: {unique_filename}")
-                    client_socket.sendall(f"Upload completed as {unique_filename}".encode('utf-8'))
-                except Exception as e:
-                    client_socket.sendall(f"ERROR: {str(e)}".encode())
+                file_path = os.path.join(UPLOAD_DIR, unique_filename)
+                with open(file_path, "wb") as f:
+                    while True:
+                        data = client_socket.recv(BUFFER_SIZE)
+                        if data == b'EOF':
+                            break
+                        f.write(data)
+
+                print(f"File uploaded and saved as: {unique_filename}")
+                client_socket.sendall(f"Upload completed as {unique_filename}".encode('utf-8'))
 
             elif command.upper().startswith("DOWNLOAD "):
                 try:
@@ -60,11 +60,12 @@ def handle_client(client_socket, address):
 
             else:
                 client_socket.sendall(b"ERROR: Invalid command")
+    except socket.timeout:
+        print(f"Timeout waiting for client {address}")
     except Exception as e:
         print(f"Error from client {address}: {e}")
     finally:
         print(f"Closing connection from: {address}")
-        clients.remove(client_socket)
         client_socket.close()
 
 def sanitize_filename(filename):
