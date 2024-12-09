@@ -1,100 +1,107 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
 import socket
 import os
-import sys
 
 SERVER_HOST = "10.0.143.9"
 SERVER_PORT = 12345
 BUFFER_SIZE = 1024
 
-def send_command(command):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-        try:
-            client_socket.settimeout(10)  # Thêm timeout cho client
-            print(f"Attempting to connect to {SERVER_HOST}:{SERVER_PORT}...")
+def send_command(command, file_path=None):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            client_socket.settimeout(10)
+            status_log.insert(tk.END, f"Attempting to connect to {SERVER_HOST}:{SERVER_PORT}...\n")
             client_socket.connect((SERVER_HOST, SERVER_PORT))
-            print("Connected to server.")
+            status_log.insert(tk.END, "Connected to server.\n")
             client_socket.sendall(command.encode('utf-8'))
 
             if command.upper().startswith("UPLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
-                
-                if response == "READY":
-                    filename = command.split(" ", 1)[1].strip()
-                    if not os.path.isfile(filename):
-                        print(f"Error: File '{filename}' does not exist.")
-                        return
-                    
-                    file_size = os.path.getsize(filename)
+                if response == "READY" and file_path:
+                    file_size = os.path.getsize(file_path)
                     sent_bytes = 0
 
-                    with open(filename, "rb") as f:
+                    with open(file_path, "rb") as f:
                         while chunk := f.read(BUFFER_SIZE):
                             client_socket.sendall(chunk)
                             sent_bytes += len(chunk)
                             progress = (sent_bytes / file_size) * 100
-                            print(f"Uploading: {progress:.2f}%", end="\r", flush=True)
+                            progress_label.config(text=f"Uploading: {progress:.2f}%")
+                            root.update_idletasks()
 
                     client_socket.sendall(b'EOF')
-                    print("\nUpload completed.")
-                    print(client_socket.recv(BUFFER_SIZE).decode('utf-8'))
+                    status_log.insert(tk.END, "Upload completed.\n")
                 else:
-                    print(f"Unexpected server response: {response}")
+                    status_log.insert(tk.END, f"Unexpected server response: {response}\n")
 
             elif command.upper().startswith("DOWNLOAD "):
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
-                if response == "EXISTS":
-                    file_size = int(client_socket.recv(BUFFER_SIZE).decode('utf-8'))  # Nhận kích thước file
-                    received_size = 0
+                if response.startswith("EXISTS"):
+                    file_size = int(response.split(" ")[1])
                     filename = command.split(" ", 1)[1].strip()
+                    save_path = filedialog.asksaveasfilename(defaultextension="", initialfile=f"downloaded_{filename}")
+                    
+                    if not save_path:
+                        status_log.insert(tk.END, "Download canceled by user.\n")
+                        return
 
-                    with open(f"downloaded_{filename}", "wb") as f:
+                    with open(save_path, "wb") as f:
+                        received_size = 0
                         while received_size < file_size:
                             data = client_socket.recv(BUFFER_SIZE)
-                            if not data:  # Nếu không nhận được dữ liệu
-                                print("Error: No data received.")
+                            if data == b'EOF':
                                 break
-                            if data == b'EOF':  # Kiểm tra tín hiệu EOF
-                                break
-                            to_write = min(file_size - received_size, len(data))  # Chỉ ghi phần cần thiết
-                            f.write(data[:to_write])
-                            received_size += to_write
-                            print(f"Downloading: {received_size / file_size * 100:.2f}% (Received: {received_size} / {file_size} bytes)", end="\r")
+                            f.write(data)
+                            received_size += len(data)
+                            progress_label.config(text=f"Downloading: {received_size / file_size * 100:.2f}%")
+                            root.update_idletasks()
 
-                    if received_size == file_size:
-                        print("\nDownload completed successfully.")
-                    else:
-                        print(f"\nError: Expected {file_size} bytes, but received {received_size} bytes.")
+                    status_log.insert(tk.END, "Download completed.\n")
                 else:
-                    print(f"Error: {response}")
-
+                    status_log.insert(tk.END, f"Error: {response}\n")
             else:
                 response = client_socket.recv(BUFFER_SIZE).decode('utf-8')
-                print("Server:", response)
-        except socket.timeout:
-            print("Timeout: No response from server.")
-        except socket.error as e:
-            print(f"Socket error: {e}")
-        except Exception as e:
-            print(f"Unexpected error: {e}")
+                status_log.insert(tk.END, f"Server: {response}\n")
+    except socket.timeout:
+        status_log.insert(tk.END, "Timeout: No response from server.\n")
+    except socket.error as e:
+        status_log.insert(tk.END, f"Socket error: {e}\n")
+    except Exception as e:
+        status_log.insert(tk.END, f"Unexpected error: {e}\n")
 
-def main():
-    while True:
-        try:
-            command = input("Enter command (UPLOAD <file> / DOWNLOAD <file> / EXIT): ").strip()
-            if command.upper() == "EXIT":
-                print("Closing connection.")
-                break
-            elif command.upper().startswith("UPLOAD ") or command.upper().startswith("DOWNLOAD "):
-                parts = command.split(" ", 1)
-                if len(parts) < 2 or not parts[1].strip():
-                    print("Error: File name required.")
-                    continue
-                send_command(command)
-            else:
-                send_command(command)
-        except KeyboardInterrupt:
-            print("\nConnection closed by user.")
-            sys.exit()
+def upload_file():
+    file_path = filedialog.askopenfilename(title="Select File")
+    if file_path:
+        filename = os.path.basename(file_path)
+        send_command(f"UPLOAD {filename}", file_path)
 
-if __name__ == "__main__":
-    main()
+def download_file():
+    filename = download_entry.get().strip()
+    if filename:
+        send_command(f"DOWNLOAD {filename}")
+    else:
+        messagebox.showwarning("Input Error", "Please enter a file name to download.")
+
+# GUI setup
+root = tk.Tk()
+root.title("File Client")
+root.geometry("700x500")
+
+upload_button = tk.Button(root, text="Upload File", command=upload_file, width=20)
+upload_button.pack(pady=10)
+
+tk.Label(root, text="Enter filename to download:").pack()
+download_entry = tk.Entry(root, width=40)
+download_entry.pack(pady=5)
+
+download_button = tk.Button(root, text="Download File", command=download_file, width=20)
+download_button.pack(pady=10)
+
+progress_label = tk.Label(root, text="Status: Ready", fg="blue")
+progress_label.pack(pady=5)
+
+status_log = scrolledtext.ScrolledText(root, width=80, height=35, background="light grey")
+status_log.pack(pady=10)
+
+root.mainloop()

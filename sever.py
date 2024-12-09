@@ -1,38 +1,87 @@
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
 import socket
 import threading
 import os
 
 BUFFER_SIZE = 1024
 UPLOAD_DIR = "uploads"
-clients = []
+server_running = False
+server_socket = None
+client_threads = []
 
-def handle_client(client_socket, address):
-    print(f"Connection established with {address}")
-    clients.append(client_socket)
+def start_server_gui(host='0.0.0.0', port=12345):
+    global server_running, server_socket
+    if server_running:
+        return
+
+    def server_thread():
+        global server_running
+        if not os.path.exists(UPLOAD_DIR):
+            os.makedirs(UPLOAD_DIR)
+
+        try:
+            server_socket.bind((host, port))
+            server_socket.listen(5)
+            log_message(f"Server started on {host}:{port}")
+            server_running = True
+
+            while server_running:
+                try:
+                    client_socket, addr = server_socket.accept()
+                    log_message(f"Connection established with {addr}")
+                    thread = threading.Thread(target=handle_client_gui, args=(client_socket, addr), daemon=True)
+                    thread.start()
+                    client_threads.append(thread)
+                except Exception as e:
+                    log_message(f"Error accepting client connection: {e}")
+        except Exception as e:
+            log_message(f"Server failed to start: {e}")
+        finally:
+            stop_server_gui()
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    threading.Thread(target=server_thread, daemon=True).start()
+
+def stop_server_gui():
+    global server_running, server_socket, client_threads
+    if not server_running:
+        return
+    server_running = False
+    try:
+        if server_socket:
+            server_socket.close()
+        log_message("Server stopped.")
+    except Exception as e:
+        log_message(f"Error stopping server: {e}")
+    for thread in client_threads:
+        thread.join()
+
+def handle_client_gui(client_socket, address):
     try:
         while True:
-            client_socket.settimeout(10)  # Timeout cho kết nối
+            client_socket.settimeout(100)
             try:
                 command = client_socket.recv(BUFFER_SIZE).decode('utf-8').strip()
             except socket.timeout:
-                print(f"Timeout occurred while waiting for client {address}.")
-                break  # Kết thúc kết nối nếu hết thời gian chờ
+                log_message(f"Timeout occurred while waiting for client {address}")
+                break
+            except (socket.timeout, socket.error) as e:
+                log_message(f"Connection error: {e}")
+                break
             if not command:
-                break  # Nếu không có lệnh nào gửi đến, thoát khỏi vòng lặp
+                break
 
             if command.upper().startswith("UPLOAD "):
                 handle_upload(client_socket, command)
-
             elif command.upper().startswith("DOWNLOAD "):
                 handle_download(client_socket, command)
-
             else:
                 client_socket.sendall(b"ERROR: Invalid command")
-
     except Exception as e:
-        print(f"Error from client {address}: {e}")
+        log_message(f"Error from client {address}: {e}")
     finally:
-        print(f"Closing connection from: {address}")
+        log_message(f"Closing connection with {address}")
         client_socket.close()
 
 def handle_upload(client_socket, command):
@@ -40,10 +89,10 @@ def handle_upload(client_socket, command):
     if not filename:
         client_socket.sendall(b"ERROR: No filename provided")
         return
-    
+
     sanitized_filename = sanitize_filename(filename)
     unique_filename = get_unique_filename(f"uploaded_{sanitized_filename}")
-    client_socket.sendall(b"READY")  # Phản hồi READY
+    client_socket.sendall(b"READY")
 
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
     try:
@@ -54,10 +103,10 @@ def handle_upload(client_socket, command):
                     break
                 f.write(data)
 
-        print(f"File uploaded and saved as: {unique_filename}")
+        log_message(f"File uploaded: {unique_filename}")
         client_socket.sendall(f"Upload completed as {unique_filename}".encode('utf-8'))
     except Exception as e:
-        print(f"Error during file upload: {e}")
+        log_message(f"Error during file upload: {e}")
         client_socket.sendall(b"ERROR: Upload failed")
 
 def handle_download(client_socket, command):
@@ -66,16 +115,15 @@ def handle_download(client_socket, command):
     if os.path.exists(filepath):
         try:
             file_size = os.path.getsize(filepath)
-            client_socket.sendall(b"EXISTS")
-            client_socket.sendall(f"{file_size}".encode('utf-8'))  # Gửi kích thước file
+            client_socket.sendall(f"EXISTS {file_size}".encode('utf-8'))
 
             with open(filepath, "rb") as f:
                 while chunk := f.read(BUFFER_SIZE):
-                    client_socket.sendall(chunk)  # Gửi dữ liệu từng phần
-            client_socket.sendall(b'EOF')  # Gửi tín hiệu EOF chỉ một lần
-            print(f"File {filename} sent successfully.")
+                    client_socket.sendall(chunk)
+            client_socket.sendall(b'EOF')
+            log_message(f"File sent: {filename}")
         except Exception as e:
-            print(f"Error during download: {e}")
+            log_message(f"Error during file download: {e}")
             client_socket.sendall(f"ERROR: {str(e)}".encode('utf-8'))
     else:
         client_socket.sendall(b"ERROR: File not found")
@@ -93,22 +141,43 @@ def get_unique_filename(filename):
         counter += 1
     return unique_filename
 
-def start_server(host='0.0.0.0', port=12345):
-    if not os.path.exists(UPLOAD_DIR):
-        os.makedirs(UPLOAD_DIR)
+def log_message(message):
+    log_box.insert(tk.END, f"{message}\n")
+    log_box.see(tk.END)
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.bind((host, port))
-        server.listen(5)
-        print(f"Server is listening on {host}:{port}")
+def on_start():
+    host = host_entry.get()
+    port = int(port_entry.get())
+    start_server_gui(host, port)
 
-        while True:
-            try:
-                client_socket, addr = server.accept()
-                print(f"Connection established with {addr}")  # In log khi có kết nối
-                threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True).start()
-            except Exception as e:
-                print(f"Error accepting client connection: {e}")
+def on_stop():
+    stop_server_gui()
 
-if __name__ == "__main__":
-    start_server()
+# GUI Setup
+root = tk.Tk()
+root.title("Server GUI")
+root.geometry("700x500")
+
+frame = tk.Frame(root)
+frame.pack(pady=10)
+
+tk.Label(frame, text="HOST:").grid(row=0, column=0, padx=5)
+host_entry = tk.Entry(frame, width=15)
+host_entry.insert(0, "0.0.0.0")
+host_entry.grid(row=0, column=1, padx=5)
+
+tk.Label(frame, text="PORT:").grid(row=0, column=2, padx=5)
+port_entry = tk.Entry(frame, width=5)
+port_entry.insert(0, "12345")
+port_entry.grid(row=0, column=3, padx=5)
+
+start_button = tk.Button(frame, text="START SEVER", command=on_start)
+start_button.grid(row=0, column=4, padx=5)
+
+stop_button = tk.Button(frame, text="STOP SEVER", command=on_stop)
+stop_button.grid(row=0, column=5, padx=5)
+
+log_box = scrolledtext.ScrolledText(root, width=100, height=50, background="light grey")
+log_box.pack(pady=10)
+
+root.mainloop()
