@@ -2,7 +2,7 @@ import socket
 import os
 import sys
 
-SERVER_HOST = "192.168.138.1"
+SERVER_HOST = "192.168.234.1"
 SERVER_PORT = 12345
 BUFFER_SIZE = 1024
 
@@ -10,7 +10,9 @@ def send_command(command):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         try:
             client_socket.settimeout(10)  # Thêm timeout cho client
+            print(f"Attempting to connect to {SERVER_HOST}:{SERVER_PORT}...")
             client_socket.connect((SERVER_HOST, SERVER_PORT))
+            print("Connected to server.")
             client_socket.sendall(command.encode('utf-8'))
 
             if command.upper().startswith("UPLOAD "):
@@ -48,6 +50,9 @@ def send_command(command):
                     with open(f"downloaded_{filename}", "wb") as f:
                         while received_size < file_size:
                             data = client_socket.recv(BUFFER_SIZE)
+                            if not data:  # Nếu không nhận được dữ liệu
+                                print("Error: No data received.")
+                                break
                             if data == b'EOF':  # Kiểm tra tín hiệu EOF
                                 break
                             to_write = min(file_size - received_size, len(data))  # Chỉ ghi phần cần thiết
