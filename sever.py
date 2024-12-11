@@ -1,11 +1,12 @@
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, ttk
 import socket
 import threading
 import os
 
 BUFFER_SIZE = 1024
 UPLOAD_DIR = "uploads"
+SERVER_PIN = "1234"
 server_running = False
 server_socket = None
 client_threads = []
@@ -59,6 +60,19 @@ def stop_server_gui():
 
 def handle_client_gui(client_socket, address):
     try:
+        # Step 1: Authenticate Client
+        client_socket.sendall(b"AUTH_REQUIRED")
+        client_pin = client_socket.recv(BUFFER_SIZE).decode('utf-8').strip()
+        if client_pin != SERVER_PIN:
+            log_message(f"Authentication failed for {address}")
+            client_socket.sendall(b"ERROR: Authentication failed")
+            client_socket.close()
+            return
+        
+        log_message(f"Client {address} authenticated successfully")
+        client_socket.sendall(b"AUTH_SUCCESS")
+
+        # Step 2: Handle Client Commands
         while True:
             client_socket.settimeout(100)
             try:
@@ -153,31 +167,36 @@ def on_start():
 def on_stop():
     stop_server_gui()
 
-# GUI Setup
+# Tạo cửa sổ chính
 root = tk.Tk()
 root.title("Server GUI")
-root.geometry("700x500")
+root.geometry("1000x800")
 
-frame = tk.Frame(root)
-frame.pack(pady=10)
+# Khung cấu hình
+frame_config = tk.LabelFrame(root, text="Cài đặt Server", padx=10, pady=10)
+frame_config.pack(pady=10, fill="x")
 
-tk.Label(frame, text="HOST:").grid(row=0, column=0, padx=5)
-host_entry = tk.Entry(frame, width=15)
+tk.Label(frame_config, text="Host:").grid(row=0, column=0, padx=5)
+host_entry = tk.Entry(frame_config, width=20)
 host_entry.insert(0, "0.0.0.0")
 host_entry.grid(row=0, column=1, padx=5)
 
-tk.Label(frame, text="PORT:").grid(row=0, column=2, padx=5)
-port_entry = tk.Entry(frame, width=5)
+tk.Label(frame_config, text="Port:").grid(row=0, column=2, padx=5)
+port_entry = tk.Entry(frame_config, width=10)
 port_entry.insert(0, "12345")
 port_entry.grid(row=0, column=3, padx=5)
 
-start_button = tk.Button(frame, text="START SEVER", command=on_start)
+start_button = ttk.Button(frame_config, text="Bật Server", command=start_server_gui)
 start_button.grid(row=0, column=4, padx=5)
 
-stop_button = tk.Button(frame, text="STOP SEVER", command=on_stop)
+stop_button = ttk.Button(frame_config, text="Tắt Server", command=stop_server_gui)
 stop_button.grid(row=0, column=5, padx=5)
 
-log_box = scrolledtext.ScrolledText(root, width=100, height=50, background="light grey")
-log_box.pack(pady=10)
+# Khung nhật ký
+log_frame = tk.LabelFrame(root, text="Nhật ký hoạt động", padx=10, pady=10)
+log_frame.pack(pady=10, fill="both", expand=True)
+
+log_box = scrolledtext.ScrolledText(log_frame, wrap="word", height=20)
+log_box.pack(fill="both", expand=True, padx=5, pady=5)
 
 root.mainloop()
